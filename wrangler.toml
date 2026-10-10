@@ -1,6 +1,0 @@
-name = "kingshot-redeemer"
-main = "index.js"
-compatibility_date = "2026-01-01"
-
-[triggers]
-crons = ["0 * * * *"] # Automatically executes your script every hour
