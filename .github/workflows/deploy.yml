@@ -1,19 +1,4 @@
-name: Deploy Worker
-
-on:
-  push:
-    branches: [ main, master ]
-  workflow_dispatch:
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    name: Deploy
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Publish to Cloudflare Workers
+re Workers
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
