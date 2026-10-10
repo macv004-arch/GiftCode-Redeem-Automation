@@ -8,8 +8,16 @@ def load_player_ids():
     if not os.path.exists(filename):
         print(f"Error: {filename} not found!")
         return []
+    
+    player_ids = []
     with open(filename, "r") as f:
-        return [line.strip() for line in f if line.strip()]
+        for line in f:
+            # Clean up whitespace, tabs, or quotes from each line
+            clean_id = line.strip().strip('"\'')
+            if clean_id and clean_id.isdigit():
+                player_ids.append(clean_id)
+    
+    return player_ids
 
 def get_active_codes():
     try:
@@ -27,29 +35,30 @@ def redeem_code(player_id, code):
         "User-Agent": "Mozilla/5.0"
     }
     payload = {
-        "fid": player_id,
-        "cdk": code
+        "fid": str(player_id),
+        "cdk": str(code)
     }
     try:
         response = requests.post(CLAIM_URL, data=payload, headers=headers, timeout=10)
         res_json = response.json()
         msg = res_json.get("msg", "Response received")
-        print(f"Player {player_id} | Code: {code} -> {msg}")
+        err_code = res_json.get("err_code", -1)
+        print(f"Player {player_id} | Code: {code} -> Status: {msg} (Code: {err_code})")
     except Exception as e:
         print(f"Error redeeming {code} for {player_id}: {e}")
 
 def main():
     player_ids = load_player_ids()
     if not player_ids:
-        print("No Player IDs found in playerIDs.txt.")
+        print("No valid numeric Player IDs found in playerIDs.txt.")
         return
 
     codes = get_active_codes()
     if not codes:
-        print("No active codes retrieved.")
+        print("No active codes retrieved from kingshot.net.")
         return
 
-    print(f"Processing {len(codes)} codes for {len(player_ids)} account(s)...")
+    print(f"Found {len(codes)} code(s) to process for {len(player_ids)} player account(s)...")
     for pid in player_ids:
         for code in codes:
             redeem_code(pid, code)
