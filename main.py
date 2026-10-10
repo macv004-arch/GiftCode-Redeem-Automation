@@ -1,145 +1,58 @@
-"""
-KingShot Auto Gift Code Redeemer
----------------------------------
-Polls kingshot.net/api/gift-codes every 15 minutes.
-When a NEW code is detected, automatically redeems it
-for every player in playerIDs.txt.
-
-Author: Built by Gopi
-"""
-
-import time
-import json
 import os
 import requests
-import schedule
-import logging
-from datetime import datetime
-from redeemer import redeem_code_for_all_players
 
-# ─── Config ────────────────────────────────────────────────────────────────────
-API_URL          = "https://kingshot.net/api/gift-codes"
-PLAYER_IDS_FILE  = "playerIDs.txt"
-SEEN_CODES_FILE  = "seen_codes.json"   # Tracks codes we've already processed
-CHECK_INTERVAL   = 15                  # How often to poll the API (minutes)
-# ───────────────────────────────────────────────────────────────────────────────
+CLAIM_URL = "https://ks-giftcode.centurygame.com/api/gift_code"
 
-# Set up logging to both console and file
-os.makedirs("logs", exist_ok=True)
-log_filename = f"logs/run_{datetime.now().strftime('%Y%m%d')}.log"
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(log_filename, encoding="utf-8"),
-        logging.StreamHandler()
-    ]
-)
-log = logging.getLogger(__name__)
-
-
-def load_seen_codes() -> set:
-    """Load the set of gift code strings we've already processed."""
-    if not os.path.exists(SEEN_CODES_FILE):
-        return set()
-    with open(SEEN_CODES_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return set(data.get("redeemed", []))
-
-
-def save_seen_codes(codes: set):
-    """Persist the set of processed codes to disk."""
-    with open(SEEN_CODES_FILE, "w", encoding="utf-8") as f:
-        json.dump({"redeemed": list(codes)}, f, indent=2)
-
-
-def load_player_ids() -> list:
-    """Read player IDs from playerIDs.txt (one ID per line, optional name after space)."""
-    players = []
-    if not os.path.exists(PLAYER_IDS_FILE):
-        log.error(f"'{PLAYER_IDS_FILE}' not found! Please create it.")
-        return players
-    with open(PLAYER_IDS_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            parts = line.split(maxsplit=1)
-            pid  = parts[0]
-            name = parts[1] if len(parts) > 1 else pid
-            players.append((pid, name))
-    return players
-
-
-def fetch_active_codes() -> list:
-    """Call the KingShot API and return list of active gift code strings."""
-    try:
-        response = requests.get(API_URL, timeout=15)
-        response.raise_for_status()
-        data = response.json()
-        codes = data.get("data", {}).get("giftCodes", [])
-        return [c["code"] for c in codes if c.get("code")]
-    except requests.RequestException as e:
-        log.error(f"Failed to fetch gift codes from API: {e}")
+def load_player_ids():
+    filename = "playerIDs.txt"
+    if not os.path.exists(filename):
+        print(f"Error: {filename} not found!")
         return []
+    with open(filename, "r") as f:
+        return [line.strip() for line in f if line.strip()]
 
+def get_active_codes():
+    try:
+        res = requests.get("https://kingshot.net/api/cdk", timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            return data.get("codes", [])
+    except Exception as e:
+        print(f"Failed to fetch codes: {e}")
+    return []
 
-def check_and_redeem():
-    """Core job: check for new codes and redeem them."""
-    log.info("─── Checking for new gift codes ───")
-
-    active_codes = fetch_active_codes()
-    if not active_codes:
-        log.info("No active codes returned from API.")
-        return
-
-    log.info(f"API returned {len(active_codes)} active code(s): {active_codes}")
-
-    seen_codes  = load_seen_codes()
-    new_codes   = [c for c in active_codes if c not in seen_codes]
-
-    if not new_codes:
-        log.info("No new codes found. Nothing to redeem.")
-        return
-
-    log.info(f"🎁 NEW code(s) detected: {new_codes}")
-
-    player_ids = load_player_ids()
-    if not player_ids:
-        log.warning("No player IDs loaded — skipping redemption.")
-        return
-
-    log.info(f"Loaded {len(player_ids)} players.")
-
-    for code in new_codes:
-        log.info(f"\n{'='*50}")
-        log.info(f"  Redeeming code: {code}")
-        log.info(f"{'='*50}")
-        redeem_code_for_all_players(code, player_ids, log)
-        seen_codes.add(code)
-        save_seen_codes(seen_codes)
-        log.info(f"✅ Finished processing code: {code}")
-
-    log.info("─── Check complete ───\n")
-
+def redeem_code(player_id, code):
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0"
+    }
+    payload = {
+        "fid": player_id,
+        "cdk": code
+    }
+    try:
+        response = requests.post(CLAIM_URL, data=payload, headers=headers, timeout=10)
+        res_json = response.json()
+        msg = res_json.get("msg", "Response received")
+        print(f"Player {player_id} | Code: {code} -> {msg}")
+    except Exception as e:
+        print(f"Error redeeming {code} for {player_id}: {e}")
 
 def main():
-    log.info("╔══════════════════════════════════════╗")
-    log.info("║  KingShot Auto Gift Code Redeemer    ║")
-    log.info("╚══════════════════════════════════════╝")
-    log.info(f"Polling every {CHECK_INTERVAL} minutes.")
-    log.info(f"Player file : {PLAYER_IDS_FILE}")
-    log.info(f"Seen codes  : {SEEN_CODES_FILE}")
+    player_ids = load_player_ids()
+    if not player_ids:
+        print("No Player IDs found in playerIDs.txt.")
+        return
 
-    # Run once immediately on startup, then on schedule
-    check_and_redeem()
-    schedule.every(CHECK_INTERVAL).minutes.do(check_and_redeem)
+    codes = get_active_codes()
+    if not codes:
+        print("No active codes retrieved.")
+        return
 
-    while True:
-        schedule.run_pending()
-        time.sleep(30)
-
+    print(f"Processing {len(codes)} codes for {len(player_ids)} account(s)...")
+    for pid in player_ids:
+        for code in codes:
+            redeem_code(pid, code)
 
 if __name__ == "__main__":
     main()
